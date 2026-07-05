@@ -77,7 +77,7 @@ Use plain ADB tapping:
 python -m arrow_puzzle.cli solve --adb-screenshot --device auto --roi 0,300,720,760 --review --backend adb
 ```
 
-The default physical click timing is a 50 ms press with a 100 ms interval. Override it with `--tap-duration` and `--delay`.
+The default physical click timing is a 25 ms press with a 40 ms interval. Override it with `--tap-duration` and `--delay`.
 
 Use MaaTouch:
 
