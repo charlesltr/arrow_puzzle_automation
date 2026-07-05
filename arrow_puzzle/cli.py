@@ -36,7 +36,8 @@ def main(argv: list[str] | None = None) -> int:
     solve.add_argument("--manual-values", help="Override OCR with digits in detected spatial order.")
     solve.add_argument("--review", action="store_true", help="Print OCR result and allow manual correction.")
     solve.add_argument("--annotate", default="debug/solution.png", help="Write a solution overlay image.")
-    solve.add_argument("--delay", type=float, default=0.04, help="Delay between physical taps.")
+    solve.add_argument("--delay", type=float, default=0.10, help="Delay between physical taps, in seconds.")
+    solve.add_argument("--tap-duration", type=float, default=0.05, help="How long each tap is held, in seconds.")
     solve.add_argument("--maatouch-bin", help="Path to MaaTouch binary. If omitted, try latest GitHub release.")
     solve.add_argument("--maatouch-port", type=int, default=11180)
     solve.set_defaults(func=cmd_solve)
@@ -183,10 +184,12 @@ def _execute_solution(
     if args.backend == "mouse":
         import pyautogui
 
-        pyautogui.PAUSE = args.delay
         for (x, y), count in zip(centers, taps):
             for _ in range(count):
-                pyautogui.click(x=round(x), y=round(y))
+                pyautogui.mouseDown(x=round(x), y=round(y))
+                time.sleep(args.tap_duration)
+                pyautogui.mouseUp(x=round(x), y=round(y))
+                time.sleep(args.delay)
         return
 
     if args.backend == "adb":
@@ -195,7 +198,7 @@ def _execute_solution(
         serial = source_device_serial or choose_device(args.device).serial
         for (x, y), count in zip(centers, taps):
             for _ in range(count):
-                tap_adb(serial, x, y)
+                tap_adb(serial, x, y, duration_ms=round(args.tap_duration * 1000))
                 time.sleep(args.delay)
         return
 
@@ -212,7 +215,7 @@ def _execute_solution(
             client.ensure_ready()
             for (x, y), count in zip(centers, taps):
                 for _ in range(count):
-                    client.tap(x, y)
+                    client.tap(x, y, duration_ms=round(args.tap_duration * 1000))
                     time.sleep(args.delay)
         finally:
             client.close()

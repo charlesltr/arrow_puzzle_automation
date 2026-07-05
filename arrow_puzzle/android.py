@@ -154,8 +154,13 @@ def screencap(serial: str, output_path: str | Path) -> Path:
     return output
 
 
-def tap_adb(serial: str, x: float, y: float) -> None:
-    proc = run_adb(["shell", "input", "tap", str(round(x)), str(round(y))], serial=serial, timeout=5)
+def tap_adb(serial: str, x: float, y: float, *, duration_ms: int = 50) -> None:
+    xi, yi = str(round(x)), str(round(y))
+    proc = run_adb(
+        ["shell", "input", "swipe", xi, yi, xi, yi, str(duration_ms)],
+        serial=serial,
+        timeout=5,
+    )
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip())
 
@@ -183,7 +188,7 @@ class MaaTouchClient:
         self._forward_port()
         self._connect_socket()
 
-    def tap(self, x: float, y: float, *, pressure: int = 50, duration_ms: int = 35) -> None:
+    def tap(self, x: float, y: float, *, pressure: int = 50, duration_ms: int = 50) -> None:
         if self.sock is None:
             self.ensure_ready()
         assert self.sock is not None
