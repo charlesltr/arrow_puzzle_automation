@@ -50,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     loop.add_argument("--backend", choices=["adb", "maatouch"], default="adb")
     loop.add_argument("--expected-cells", type=int, default=37)
     loop.add_argument("--interval", type=float, default=5.0, help="Seconds between confirmation screenshots.")
+    loop.add_argument("--settle", type=float, default=0.5, help="Seconds to wait after the last tap before confirming completion.")
+    loop.add_argument("--endgame-attempts", type=int, default=1, help="Extra residual solve attempts after the first solve.")
     loop.add_argument("--delay", type=float, default=0.04, help="Delay between physical taps, in seconds.")
     loop.add_argument("--tap-duration", type=float, default=0.025, help="How long each tap is held, in seconds.")
     loop.add_argument("--maatouch-bin", help="Path to MaaTouch binary. If omitted, try latest GitHub release.")
@@ -158,7 +160,7 @@ def cmd_solve(args: argparse.Namespace) -> int:
 
 
 def cmd_loop(args: argparse.Namespace) -> int:
-    from .android import choose_device, screencap
+    from .android import choose_device
 
     device = choose_device(args.device)
     stop_event = _start_stop_listener()
@@ -172,30 +174,24 @@ def cmd_loop(args: argparse.Namespace) -> int:
     while not stop_event.is_set():
         checks += 1
         try:
-            screencap(device.serial, screenshot_path)
-            full_image = load_image(screenshot_path)
-            board_image, origin = _apply_roi(full_image, (0, 0), args.roi)
-            board = recognize_board(
-                board_image,
-                expected_cells=args.expected_cells,
-                roi_origin=origin,
-            )
-            matrix = click_matrix_from_centers(board.centers)
-            solution = solve_board(board.values, matrix)
+            full_image, board_image, board, solution = _capture_loop_state(args, device.serial, screenshot_path)
             overlay_solution(board_image, board, solution.taps, annotate_dir / f"check-{checks:04d}.png")
 
             timestamp = time.strftime("%H:%M:%S")
             if solution.total_taps == 0:
-                x, y = find_completion_button(full_image)
                 completed_rounds += 1
-                print(
-                    f"[{timestamp}] completed board detected; tapping next-game button "
-                    f"at ({round(x)}, {round(y)}). Completed rounds: {completed_rounds}"
-                )
-                _execute_solution(args, [(x, y)], [1], device.serial)
+                _tap_next_game(args, full_image, device.serial, completed_rounds, timestamp)
             else:
                 print(f"[{timestamp}] solving board with {solution.total_taps} taps.")
                 _execute_solution(args, board.absolute_centers, solution.taps, device.serial)
+                completed_rounds = _confirm_after_solve(
+                    args,
+                    device.serial,
+                    screenshot_path,
+                    annotate_dir,
+                    checks,
+                    completed_rounds,
+                )
         except Exception as exc:
             print(f"[{time.strftime('%H:%M:%S')}] check failed: {exc}", file=sys.stderr)
 
@@ -203,6 +199,76 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
     print(f"Loop stopped. Completed rounds: {completed_rounds}; checks: {checks}")
     return 0
+
+
+def _capture_loop_state(
+    args: argparse.Namespace,
+    serial: str,
+    screenshot_path: Path,
+):
+    from .android import screencap
+
+    screencap(serial, screenshot_path)
+    full_image = load_image(screenshot_path)
+    board_image, origin = _apply_roi(full_image, (0, 0), args.roi)
+    board = recognize_board(
+        board_image,
+        expected_cells=args.expected_cells,
+        roi_origin=origin,
+    )
+    matrix = click_matrix_from_centers(board.centers)
+    solution = solve_board(board.values, matrix)
+    return full_image, board_image, board, solution
+
+
+def _confirm_after_solve(
+    args: argparse.Namespace,
+    serial: str,
+    screenshot_path: Path,
+    annotate_dir: Path,
+    check_index: int,
+    completed_rounds: int,
+) -> int:
+    time.sleep(max(0.0, args.settle))
+    for attempt in range(args.endgame_attempts + 1):
+        full_image, board_image, board, solution = _capture_loop_state(args, serial, screenshot_path)
+        overlay_solution(
+            board_image,
+            board,
+            solution.taps,
+            annotate_dir / f"confirm-{check_index:04d}-{attempt:02d}.png",
+        )
+        timestamp = time.strftime("%H:%M:%S")
+        if solution.total_taps == 0:
+            completed_rounds += 1
+            _tap_next_game(args, full_image, serial, completed_rounds, timestamp)
+            return completed_rounds
+        if attempt >= args.endgame_attempts:
+            print(
+                f"[{timestamp}] board still unfinished after residual solve attempts; "
+                f"remaining taps: {solution.total_taps}"
+            )
+            return completed_rounds
+
+        print(f"[{timestamp}] residual board detected; solving endgame with {solution.total_taps} taps.")
+        _execute_solution(args, board.absolute_centers, solution.taps, serial)
+        time.sleep(max(0.0, args.settle))
+    return completed_rounds
+
+
+def _tap_next_game(
+    args: argparse.Namespace,
+    full_image: np.ndarray,
+    serial: str,
+    completed_rounds: int,
+    timestamp: str,
+) -> None:
+    x, y = find_completion_button(full_image)
+    print(
+        f"[{timestamp}] completed board detected; tapping next-game button "
+        f"at ({round(x)}, {round(y)}). Completed rounds: {completed_rounds}"
+    )
+    _execute_solution(args, [(x, y)], [1], serial)
 
 
 def _load_source(args: argparse.Namespace) -> tuple[np.ndarray, tuple[int, int], str | None]:

@@ -91,7 +91,7 @@ Run continuously until you type anything in the terminal and press Enter:
 python -m arrow_puzzle.cli loop --device emulator-5556 --roi 0,300,720,760 --backend adb
 ```
 
-The loop screenshots every 5 seconds. If the board is not complete it solves and taps it; if the board is complete it taps the bottom reward button to start the next game.
+The loop screenshots every 5 seconds. If the board is not complete it solves and taps it, waits 500 ms, confirms completion, and taps the bottom reward button to start the next game. If the confirm screenshot is still not complete, it performs one residual/endgame solve before checking again.
 
 You can also pass a local MaaTouch binary:
 
