@@ -23,6 +23,16 @@ ADB_DEFAULT_PORTS = {
     "WSA": [58526],
 }
 
+ADB_ENV_VAR = "ARROW_PUZZLE_ADB"
+KNOWN_ADB_PATHS = [
+    Path("D:/leidian/LDPlayer9/adb.exe"),
+    Path("C:/leidian/LDPlayer9/adb.exe"),
+    Path("D:/leidian/LDPlayer4/adb.exe"),
+    Path("C:/leidian/LDPlayer4/adb.exe"),
+]
+
+_ADB_PATH_OVERRIDE: Path | None = None
+
 
 @dataclass(frozen=True)
 class AndroidDevice:
@@ -36,11 +46,20 @@ class AndroidDevice:
     emulator: str = "Unknown"
 
 
+def set_adb_path(path: str | Path | None) -> None:
+    global _ADB_PATH_OVERRIDE
+    _ADB_PATH_OVERRIDE = Path(path) if path else None
+
+
 def adb_path() -> str:
-    found = shutil.which("adb")
-    if not found:
-        raise RuntimeError("adb was not found on PATH")
-    return found
+    for candidate in _adb_candidates():
+        if candidate.is_file():
+            return str(candidate)
+    searched = ", ".join(str(path) for path in _adb_candidates())
+    raise RuntimeError(
+        f"adb was not found. Set {ADB_ENV_VAR}, pass --adb-path, or put adb on PATH. "
+        f"Searched: {searched}"
+    )
 
 
 def run_adb(args: list[str], *, serial: str | None = None, timeout: float = 20) -> subprocess.CompletedProcess[str]:
@@ -301,4 +320,30 @@ def _select_maatouch_asset(assets: list[dict], abi: str) -> dict | None:
 
 
 def adb_available() -> bool:
-    return shutil.which("adb") is not None
+    try:
+        adb_path()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _adb_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    if _ADB_PATH_OVERRIDE:
+        candidates.append(_ADB_PATH_OVERRIDE)
+    env_path = os.environ.get(ADB_ENV_VAR)
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.extend(KNOWN_ADB_PATHS)
+    found = shutil.which("adb")
+    if found:
+        candidates.append(Path(found))
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key not in seen:
+            deduped.append(candidate)
+            seen.add(key)
+    return deduped

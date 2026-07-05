@@ -16,9 +16,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     devices = sub.add_parser("devices", help="List connected ADB devices.")
+    _add_adb_options(devices)
     devices.set_defaults(func=cmd_devices)
 
     connect = sub.add_parser("connect-emulators", help="Try common local Android emulator ADB ports.")
+    _add_adb_options(connect)
     connect.set_defaults(func=cmd_connect_emulators)
 
     solve = sub.add_parser("solve", help="Recognize a board, solve it, and optionally click it.")
@@ -26,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--image", help="Read a screenshot/image file.")
     source.add_argument("--screen", action="store_true", help="Select a screen region with the mouse.")
     source.add_argument("--adb-screenshot", action="store_true", help="Capture screenshot from an Android device.")
+    _add_adb_options(solve)
     solve.add_argument("--roi", help="Crop ROI as x,y,w,h after loading image or adb screenshot.")
     solve.add_argument("--device", default="auto", help="ADB serial, or auto for interactive selection.")
     solve.add_argument("--backend", choices=["dry-run", "mouse", "adb", "maatouch"], default="dry-run")
@@ -39,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     solve.set_defaults(func=cmd_solve)
 
     args = parser.parse_args(argv)
+    _configure_adb(args)
     try:
         return int(args.func(args) or 0)
     except KeyboardInterrupt:
@@ -49,11 +53,25 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+def _add_adb_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--adb-path",
+        help="Path to adb.exe. Defaults include D:\\leidian\\LDPlayer9\\adb.exe and ARROW_PUZZLE_ADB.",
+    )
+
+
+def _configure_adb(args: argparse.Namespace) -> None:
+    if hasattr(args, "adb_path") and args.adb_path:
+        from .android import set_adb_path
+
+        set_adb_path(args.adb_path)
+
+
 def cmd_devices(_: argparse.Namespace) -> int:
     from .android import adb_available, list_devices
 
     if not adb_available():
-        print("adb was not found on PATH")
+        print("adb was not found; pass --adb-path or set ARROW_PUZZLE_ADB")
         return 1
     for device in list_devices():
         print(
@@ -67,7 +85,7 @@ def cmd_connect_emulators(_: argparse.Namespace) -> int:
     from .android import adb_available, connect_known_emulators
 
     if not adb_available():
-        print("adb was not found on PATH")
+        print("adb was not found; pass --adb-path or set ARROW_PUZZLE_ADB")
         return 1
     successes = connect_known_emulators()
     if successes:

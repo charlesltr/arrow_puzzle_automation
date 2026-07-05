@@ -21,7 +21,7 @@ python -m pip install -e .
 arrow-puzzle --help
 ```
 
-ADB is optional unless you want Android-device control. Make sure `adb.exe` is on `PATH`.
+ADB is optional unless you want Android-device control. The tool will automatically try `D:\leidian\LDPlayer9\adb.exe`; you can also set `ARROW_PUZZLE_ADB` or pass `--adb-path`.
 
 ## Quick Start
 
@@ -47,10 +47,22 @@ List connected Android devices:
 python -m arrow_puzzle.cli devices
 ```
 
+Use the LDPlayer ADB explicitly:
+
+```powershell
+python -m arrow_puzzle.cli devices --adb-path D:\leidian\LDPlayer9\adb.exe
+```
+
 Try common local emulator ADB ports for Android Emulator, BlueStacks, NoxPlayer, MuMu, LDPlayer, MEmu, Genymotion, and WSA:
 
 ```powershell
 python -m arrow_puzzle.cli connect-emulators
+```
+
+Or set it once for the current PowerShell:
+
+```powershell
+$env:ARROW_PUZZLE_ADB = 'D:\leidian\LDPlayer9\adb.exe'
 ```
 
 Capture from an Android device, crop to the puzzle area, and dry-run:
