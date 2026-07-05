@@ -1,10 +1,86 @@
-# Arrow Puzzle Solver
+# Arrow Puzzle Automation
 
 Local helper for recognizing and solving the Exponential Idle arrow puzzle from a screenshot.
 
-Planned workflow:
+The project has three layers:
 
-1. Select the puzzle area on screen.
-2. Detect the honeycomb cells and read values `1..6`.
-3. Solve the board as a modulo-6 linear puzzle.
-4. Optionally click the solution back into the game.
+1. Local vision: detect the honeycomb cells and read values `1..6`.
+2. Solver: solve the board as a modulo-6 linear puzzle.
+3. Executor: click by desktop mouse, plain ADB, or MaaTouch.
+
+## Install
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+Or install the local command:
+
+```powershell
+python -m pip install -e .
+arrow-puzzle --help
+```
+
+ADB is optional unless you want Android-device control. Make sure `adb.exe` is on `PATH`.
+
+## Quick Start
+
+Select the puzzle region on your desktop, recognize it, solve it, and only print the taps:
+
+```powershell
+python -m arrow_puzzle.cli solve --screen --review
+```
+
+If the OCR result is wrong, `--review` lets you paste corrected digits in the displayed cell order.
+
+After the dry-run looks right, execute by desktop mouse:
+
+```powershell
+python -m arrow_puzzle.cli solve --screen --review --backend mouse
+```
+
+## Android / Emulator
+
+List connected Android devices:
+
+```powershell
+python -m arrow_puzzle.cli devices
+```
+
+Try common local emulator ADB ports for Android Emulator, BlueStacks, NoxPlayer, MuMu, LDPlayer, MEmu, Genymotion, and WSA:
+
+```powershell
+python -m arrow_puzzle.cli connect-emulators
+```
+
+Capture from an Android device, crop to the puzzle area, and dry-run:
+
+```powershell
+python -m arrow_puzzle.cli solve --adb-screenshot --device auto --roi 0,300,720,760 --review
+```
+
+Use plain ADB tapping:
+
+```powershell
+python -m arrow_puzzle.cli solve --adb-screenshot --device auto --roi 0,300,720,760 --review --backend adb
+```
+
+Use MaaTouch:
+
+```powershell
+python -m arrow_puzzle.cli solve --adb-screenshot --device auto --roi 0,300,720,760 --review --backend maatouch
+```
+
+You can also pass a local MaaTouch binary:
+
+```powershell
+python -m arrow_puzzle.cli solve --adb-screenshot --backend maatouch --maatouch-bin C:\path\to\maatouch
+```
+
+MaaTouch uses the minitouch-style protocol documented by [MaaAssistantArknights/MaaTouch](https://github.com/MaaAssistantArknights/MaaTouch): press (`d`), commit (`c`), release (`u`), commit (`c`).
+
+## Notes
+
+- The default board size is 37 cells, matching the Hard board shown in the guide.
+- The solver does not depend on the 8 hard end-case lookup table. It solves the full click system over modulo 6 by combining modulo 2 and modulo 3 solutions.
+- Always run dry-run first. The overlay image is written to `debug/solution.png` by default.
