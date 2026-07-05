@@ -85,6 +85,14 @@ Use MaaTouch:
 python -m arrow_puzzle.cli solve --adb-screenshot --device auto --roi 0,300,720,760 --review --backend maatouch
 ```
 
+Run continuously until you type anything in the terminal and press Enter:
+
+```powershell
+python -m arrow_puzzle.cli loop --device emulator-5556 --roi 0,300,720,760 --backend adb
+```
+
+The loop screenshots every 5 seconds. If the board is not complete it solves and taps it; if the board is complete it taps the bottom reward button to start the next game.
+
 You can also pass a local MaaTouch binary:
 
 ```powershell

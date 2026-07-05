@@ -176,6 +176,39 @@ def overlay_solution(
     cv2.imencode(output.suffix or ".png", annotated)[1].tofile(str(output))
 
 
+def find_completion_button(image: np.ndarray) -> tuple[float, float]:
+    """Find the bottom reward/next-game button and return its center."""
+    import cv2
+
+    h, w = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    bottom_start = int(h * 0.68)
+    roi = gray[bottom_start:h, :]
+    edges = cv2.Canny(roi, 35, 120)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    candidates: list[tuple[float, int, int, int, int]] = []
+    for contour in contours:
+        x, y, bw, bh = cv2.boundingRect(contour)
+        if bw < w * 0.45:
+            continue
+        if not (h * 0.025 <= bh <= h * 0.12):
+            continue
+        if bw / max(1, bh) < 5:
+            continue
+        abs_y = y + bottom_start
+        if abs_y < h * 0.78:
+            continue
+        score = float(bw * bh)
+        candidates.append((score, x, abs_y, bw, bh))
+
+    if candidates:
+        _, x, y, bw, bh = max(candidates, key=lambda item: item[0])
+        return x + bw / 2, y + bh / 2
+
+    return w * 0.457, h * 0.926
+
+
 def _parse_manual_values(text: str, expected: int) -> list[int]:
     values = [int(ch) for ch in text if ch in "123456"]
     if len(values) != expected:

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import argparse
 import sys
+import threading
 import time
 from pathlib import Path
 
 import numpy as np
 
 from .solver import click_matrix_from_centers, solve_board
-from .vision import board_text, load_image, overlay_solution, recognize_board
+from .vision import board_text, find_completion_button, load_image, overlay_solution, recognize_board
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,6 +42,20 @@ def main(argv: list[str] | None = None) -> int:
     solve.add_argument("--maatouch-bin", help="Path to MaaTouch binary. If omitted, try latest GitHub release.")
     solve.add_argument("--maatouch-port", type=int, default=11180)
     solve.set_defaults(func=cmd_solve)
+
+    loop = sub.add_parser("loop", help="Continuously solve games and start the next round when complete.")
+    _add_adb_options(loop)
+    loop.add_argument("--device", default="auto", help="ADB serial, or auto for interactive selection.")
+    loop.add_argument("--roi", default="0,300,720,760", help="Puzzle crop ROI as x,y,w,h.")
+    loop.add_argument("--backend", choices=["adb", "maatouch"], default="adb")
+    loop.add_argument("--expected-cells", type=int, default=37)
+    loop.add_argument("--interval", type=float, default=5.0, help="Seconds between confirmation screenshots.")
+    loop.add_argument("--delay", type=float, default=0.04, help="Delay between physical taps, in seconds.")
+    loop.add_argument("--tap-duration", type=float, default=0.025, help="How long each tap is held, in seconds.")
+    loop.add_argument("--maatouch-bin", help="Path to MaaTouch binary. If omitted, try latest GitHub release.")
+    loop.add_argument("--maatouch-port", type=int, default=11180)
+    loop.add_argument("--annotate-dir", default="debug/loop", help="Directory for loop overlay images.")
+    loop.set_defaults(func=cmd_loop)
 
     args = parser.parse_args(argv)
     _configure_adb(args)
@@ -142,6 +157,54 @@ def cmd_solve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_loop(args: argparse.Namespace) -> int:
+    from .android import choose_device, screencap
+
+    device = choose_device(args.device)
+    stop_event = _start_stop_listener()
+    annotate_dir = Path(args.annotate_dir)
+    annotate_dir.mkdir(parents=True, exist_ok=True)
+    screenshot_path = Path("captures") / f"{device.serial.replace(':', '_')}-loop.png"
+    completed_rounds = 0
+    checks = 0
+
+    print("Loop running. Type anything and press Enter to stop.")
+    while not stop_event.is_set():
+        checks += 1
+        try:
+            screencap(device.serial, screenshot_path)
+            full_image = load_image(screenshot_path)
+            board_image, origin = _apply_roi(full_image, (0, 0), args.roi)
+            board = recognize_board(
+                board_image,
+                expected_cells=args.expected_cells,
+                roi_origin=origin,
+            )
+            matrix = click_matrix_from_centers(board.centers)
+            solution = solve_board(board.values, matrix)
+            overlay_solution(board_image, board, solution.taps, annotate_dir / f"check-{checks:04d}.png")
+
+            timestamp = time.strftime("%H:%M:%S")
+            if solution.total_taps == 0:
+                x, y = find_completion_button(full_image)
+                completed_rounds += 1
+                print(
+                    f"[{timestamp}] completed board detected; tapping next-game button "
+                    f"at ({round(x)}, {round(y)}). Completed rounds: {completed_rounds}"
+                )
+                _execute_solution(args, [(x, y)], [1], device.serial)
+            else:
+                print(f"[{timestamp}] solving board with {solution.total_taps} taps.")
+                _execute_solution(args, board.absolute_centers, solution.taps, device.serial)
+        except Exception as exc:
+            print(f"[{time.strftime('%H:%M:%S')}] check failed: {exc}", file=sys.stderr)
+
+        stop_event.wait(max(0.1, args.interval))
+
+    print(f"Loop stopped. Completed rounds: {completed_rounds}; checks: {checks}")
+    return 0
+
+
 def _load_source(args: argparse.Namespace) -> tuple[np.ndarray, tuple[int, int], str | None]:
     if args.image:
         return load_image(args.image), (0, 0), None
@@ -193,13 +256,10 @@ def _execute_solution(
         return
 
     if args.backend == "adb":
-        from .android import choose_device, tap_adb
+        from .android import choose_device
 
         serial = source_device_serial or choose_device(args.device).serial
-        for (x, y), count in zip(centers, taps):
-            for _ in range(count):
-                tap_adb(serial, x, y, duration_ms=round(args.tap_duration * 1000))
-                time.sleep(args.delay)
+        _tap_points(args, centers, taps, serial)
         return
 
     if args.backend == "maatouch":
@@ -222,6 +282,33 @@ def _execute_solution(
         return
 
     raise ValueError(f"unknown backend: {args.backend}")
+
+
+def _tap_points(
+    args: argparse.Namespace,
+    centers: list[tuple[float, float]],
+    taps: list[int],
+    serial: str,
+) -> None:
+    from .android import tap_adb
+
+    for (x, y), count in zip(centers, taps):
+        for _ in range(count):
+            tap_adb(serial, x, y, duration_ms=round(args.tap_duration * 1000))
+            time.sleep(args.delay)
+
+
+def _start_stop_listener() -> threading.Event:
+    stop_event = threading.Event()
+
+    def wait_for_input() -> None:
+        try:
+            sys.stdin.readline()
+        finally:
+            stop_event.set()
+
+    threading.Thread(target=wait_for_input, daemon=True).start()
+    return stop_event
 
 
 if __name__ == "__main__":
