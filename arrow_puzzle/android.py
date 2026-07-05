@@ -150,7 +150,7 @@ def screencap(serial: str, output_path: str | Path) -> Path:
     raw = proc.stdout
     if not raw:
         raise RuntimeError("adb screencap returned no data")
-    output.write_bytes(raw.replace(b"\r\n", b"\n"))
+    output.write_bytes(raw)
     return output
 
 

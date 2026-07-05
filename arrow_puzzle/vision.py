@@ -123,12 +123,20 @@ class DigitRecognizer:
         sample = _normalize_digit(crop)
         best_value = 1
         best_score = -1.0
+        best_by_value: dict[int, float] = {}
         for value, templates in self.templates.items():
+            value_best = -1.0
             for template in templates:
                 score = _binary_similarity(sample, template)
+                value_best = max(value_best, score)
                 if score > best_score:
                     best_value = value
                     best_score = score
+            best_by_value[value] = value_best
+        if best_value == 1 and _looks_like_four(sample):
+            four_score = best_by_value.get(4, 0.0)
+            if best_score - four_score < 0.08:
+                return 4, float(max(best_score, four_score))
         return best_value, float(best_score)
 
 
@@ -329,6 +337,51 @@ def _binary_similarity(a: np.ndarray, b: np.ndarray) -> float:
     iou = np.logical_and(a_bool, b_bool).sum() / union
     pixel_match = (a_bool == b_bool).mean()
     return float(iou * 0.75 + pixel_match * 0.25)
+
+
+def _looks_like_four(sample: np.ndarray) -> bool:
+    ys, xs = np.where(sample > 0)
+    if len(xs) == 0:
+        return False
+
+    x0, x1 = int(xs.min()), int(xs.max())
+    y0, y1 = int(ys.min()), int(ys.max())
+    width = x1 - x0 + 1
+    height = y1 - y0 + 1
+    if width < 12 or height < 16:
+        return False
+
+    spans: list[int] = []
+    central_left_ink = 0
+    central_ink = 0
+    right_column_ink = 0
+    left_column_ink = 0
+    mid_left_limit = x0 + width * 0.42
+    right_start = x0 + width * 0.58
+    lower_mid_start = y0 + height * 0.48
+    lower_mid_end = y0 + height * 0.82
+
+    for y in range(y0, y1 + 1):
+        row_xs = np.where(sample[y] > 0)[0]
+        if len(row_xs):
+            if lower_mid_start <= y <= lower_mid_end:
+                spans.append(int(row_xs.max() - row_xs.min() + 1))
+            for x in row_xs:
+                if lower_mid_start <= y <= lower_mid_end:
+                    central_ink += 1
+                    if x <= mid_left_limit:
+                        central_left_ink += 1
+                if x >= right_start:
+                    right_column_ink += 1
+                if x <= mid_left_limit:
+                    left_column_ink += 1
+
+    max_lower_mid_span = max(spans) if spans else 0
+    has_crossbar = max_lower_mid_span >= max(10, int(width * 0.82))
+    has_left_structure = central_left_ink >= 4 and left_column_ink >= 8
+    has_right_stem = right_column_ink >= max(10, int(height * 0.45))
+    left_ratio = central_left_ink / max(1, central_ink)
+    return has_crossbar and has_left_structure and has_right_stem and left_ratio > 0.12
 
 
 def _rows_from_cells(cells: list[Cell]) -> list[list[Cell]]:
