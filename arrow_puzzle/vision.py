@@ -235,7 +235,7 @@ def _select_board_circles(
     else:
         radii = np.array([c[2] for c in circles], dtype=float)
         median_r = float(np.median(radii))
-        filtered = [c for c in circles if median_r * 0.65 <= c[2] <= median_r * 1.35]
+        filtered = [c for c in circles if median_r * 0.82 <= c[2] <= median_r * 1.16]
         if len(filtered) >= expected:
             circles = filtered
 
